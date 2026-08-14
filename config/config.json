@@ -1,0 +1,19 @@
+{
+    "mqtt": {
+        "address": "localhost",
+        "port": 1883,
+        "topic": "sensor-machine1"
+    },
+    "db": {
+        "filepath_db": "/opt/project/database/LocalData.db",
+        "table_name": "SensorData"
+    },
+    "postgres": {
+        "connection_id": "sensor_postgres",
+        "raw_table": "SensorData",
+        "metrics_table": "SensorMetrics"
+    },
+    "metrics": {
+        "temperature_alert_threshold": 85
+    }
+}

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Airflow
+logs/
+plugins/__pycache__/
+airflow.cfg
+airflow.db
+standalone_admin_password.txt
+simple_auth_manager_passwords.json*
+config/simple_auth_manager_passwords.json*
+
+# SQLite runtime data
+database/*.db
+database/*.db-shm
+database/*.db-wal
+database/*.db-journal
+
+# Keep directory in Git
+!database/.gitkeep
+!logs/.gitkeep
+!plugins/.gitkeep
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
