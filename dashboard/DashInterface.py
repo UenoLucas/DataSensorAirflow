@@ -286,7 +286,7 @@ app.layout = dbc.Container(
                     ),
                     html.P(
                         (
-                            "Metrics calculated over five-minute time windows",
+                            "Metrics calculated over two-minute time windows",
                         ),
                         className=(
                             "text-center text-muted "
@@ -569,7 +569,7 @@ def update_dashboard(
         str(total_records),
         (
             f"{len(filtered_dataframe)} "
-            "Grouped by a range of 5 minutes"
+            "two-minute windows"
         ),
     )
 

@@ -7,12 +7,16 @@ from controllers.postgresController import PostgreSQLController
 
 POSTGRES_CONNECTION_ID = "sensor_postgres"
 TEMPERATURE_ALERT_THRESHOLD = 85
+METRICS_WINDOW_MINUTES = 2
+METRICS_WATERMARK_SECONDS = 15
 
 
 @dag(
     dag_id="sensor_processing",
-    description='Calculete metrics from raw sensor data',
-    schedule="*/5 * * * *",
+    description="Calculate two-minute metrics from raw sensor data",
+    # Run every two minutes on odd minutes. This leaves roughly one minute
+    # between an even-minute window boundary and its metrics calculation.
+    schedule="1-59/2 * * * *",
     start_date=datetime(2026, 7, 1),
     catchup=False,
     max_active_runs=1,
@@ -30,7 +34,11 @@ def sensor_processing():
             controller.calculate_sensor_metrics(
                 temperature_alert_threshold=(
                     TEMPERATURE_ALERT_THRESHOLD
-                )
+                ),
+                window_minutes=METRICS_WINDOW_MINUTES,
+                watermark_seconds=(
+                    METRICS_WATERMARK_SECONDS
+                ),
             )
         )
 

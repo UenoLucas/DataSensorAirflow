@@ -35,9 +35,10 @@ def sqlite_to_postgres():
         )
         sqlite_controller = SQLiteController(SQLITE_DATABASE,table_name='SensorData')
 
-        # get the last source id from postgresql
+        # nSourceId comes from SQLite's global AUTOINCREMENT sequence, so one
+        # cursor is sufficient even when records belong to different machines.
         last_source_id = (
-            postgres_controller.get_last_source_id()
+            postgres_controller.get_last_ingested_source_id()
         )
 
         # get in sqlite the data after this last source id

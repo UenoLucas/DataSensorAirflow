@@ -93,7 +93,7 @@ class Publish_Data():
                 char="\\"
             else:
                 char="/"
-            time.sleep(3)
+            time.sleep(2)
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Publish data script")
