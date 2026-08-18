@@ -16,35 +16,41 @@ from pathlib import Path
 
 class PowerMachineSimulation:
     def __init__(self):
-        self.amplitude_current = 10.0
-        self.frequency_current = 1.0
+        self.base_voltage = 220.0
+        self.base_current = 10.0
+        self.temperature = 70.0
+        self.start_time = time.monotonic()
 
-        self.amplitude_voltage = 100.0
-        self.frequency_voltage = 2.0
+    def voltage_function(self, elapsed_seconds):
+        voltage = (
+            self.base_voltage
+            + 4 * math.sin(2 * math.pi * 0.05 * elapsed_seconds)
+            + random.uniform(-1.0, 1.0)
+        )
 
-    def current_function(self, i):
-        # Simulação de corrente senoidal com ruído
-        amplitude_noise = 1.0
-        noise = amplitude_noise * (2 * random.random() - 1)  # Ruído aleatório entre -amplitude_noise e amplitude_noise
+        return round(voltage, 2)
 
-        current = self.amplitude_current * math.sin(2 * math.pi * self.frequency_current * i) + noise
-        return round(current, 4)
+    def current_function(self, elapsed_seconds):
+        current = (
+            self.base_current
+            + 3 * math.sin(2 * math.pi * 0.1 * elapsed_seconds)
+            + random.uniform(-0.5, 0.5)
+        )
 
-    def voltage_function(self, i):
-        # Simulação de tensão triangular com ruído
-        amplitude_noise = 10.0
-        noise = amplitude_noise * (2 * random.random() - 1)  # Ruído aleatório entre -amplitude_noise e amplitude_noise
+        return round(max(current, 0), 2)
 
-        period = 1 / self.frequency_voltage
-        t = i % period  # Tempo dentro do período
-        if t < period / 2:
-            voltage = 2 * self.amplitude_voltage * (t / (period / 2)) - self.amplitude_voltage + noise
-        else:
-            voltage = -2 * self.amplitude_voltage * ((t - period / 2) / (period / 2)) + self.amplitude_voltage + noise
-        return round(voltage, 3)
+    def temperature_function(self, current):
+        target_temperature = 85 + current * 1.2
 
-    def temperature_function(self,):
-        return  random.randint(60,90)
+        # aproxima lentamente a temperatura do valor esperado para a carga
+        self.temperature += (
+            target_temperature - self.temperature
+        ) * 0.05
+
+        # representa uma pequena variação natural do sensor
+        self.temperature += random.uniform(-0.2, 0.2)
+
+        return round(self.temperature, 2)
 
 class Publish_Data():
     def __init__(self, machine_name= ""):
@@ -80,9 +86,13 @@ class Publish_Data():
         char = "/"
         original_char=char
         while(True):
-            current = self.power_data.current_function(i)
-            tension = self.power_data.voltage_function(i)
-            temperature = self.power_data.temperature_function()
+            # usa o mesmo instante para calcular todas as grandezas da leitura
+            elapsed_seconds = (
+                time.monotonic() - self.power_data.start_time
+            )
+            current = self.power_data.current_function(elapsed_seconds)
+            tension = self.power_data.voltage_function(elapsed_seconds)
+            temperature = self.power_data.temperature_function(current)
             datetime_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             obj = {"strMachineName":self.machine_name,"fA":current,"fV":tension,"nTemperature":temperature,"dtNow":datetime_now}
             self.mqtt_object.publish_message(json.dumps(obj))

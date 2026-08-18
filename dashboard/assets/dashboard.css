@@ -1,0 +1,31 @@
+.temperature-card {
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.temperature-alert-active {
+    border: 2px solid #ff4d4d;
+    animation: temperature-alarm-pulse 1s ease-in-out infinite;
+}
+
+.temperature-alert-active .text-muted {
+    color: #ffffff !important;
+}
+
+@keyframes temperature-alarm-pulse {
+    0%, 100% {
+        background-color: #6f1d1d;
+        box-shadow: 0 0 8px rgba(255, 77, 77, 0.55);
+    }
+
+    50% {
+        background-color: #dc3545;
+        box-shadow: 0 0 24px rgba(255, 77, 77, 1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .temperature-alert-active {
+        animation: none;
+        background-color: #dc3545;
+    }
+}

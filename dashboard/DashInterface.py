@@ -9,6 +9,7 @@ from typing import Any
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import psycopg2
 from dash import Dash, Input, Output, callback, dcc, html
 from psycopg2 import sql
@@ -60,6 +61,13 @@ METRICS_TABLE_NAME = postgres_config.get(
     "metrics_table",
     "SensorMetrics",
 ).lower()
+
+TEMPERATURE_ALERT_THRESHOLD = int(
+    config.get("metrics", {}).get(
+        "temperature_alert_threshold",
+        85,
+    )
+)
 
 
 def get_postgres_connection():
@@ -182,10 +190,6 @@ def configure_figure(
         transition_duration=300
     )
 
-    figure.update_traces(
-    line_width=3
-    )
-
     return figure
 
 
@@ -196,6 +200,7 @@ def create_metric_figure(
     maximum_column: str,
     title: str,
     y_axis_title: str,
+    alert_threshold: float | None = None,
 ):
     chart_dataframe = dataframe[
         [
@@ -206,32 +211,57 @@ def create_metric_figure(
         ]
     ].copy()
 
-    chart_dataframe = chart_dataframe.rename(
-        columns={
-            average_column: "Average",
-            minimum_column: "Min",
-            maximum_column: "Max",
-        }
+    figure = go.Figure()
+
+    # cria o limite inferior invisível que serve como base da faixa
+    figure.add_trace(
+        go.Scatter(
+            x=chart_dataframe["WindowStart"],
+            y=chart_dataframe[minimum_column],
+            mode="lines",
+            line={"width": 0},
+            name="Minimum",
+            showlegend=False,
+            hovertemplate="Minimum: %{y:.2f}<extra></extra>",
+        )
     )
 
-    long_dataframe = chart_dataframe.melt(
-        id_vars="WindowStart",
-        value_vars=[
-            "Average",
-            "Min",
-            "Max",
-        ],
-        var_name="Metric",
-        value_name="Value",
+    # preenche o espaço entre mínimo e máximo sem criar duas linhas de destaque
+    figure.add_trace(
+        go.Scatter(
+            x=chart_dataframe["WindowStart"],
+            y=chart_dataframe[maximum_column],
+            mode="lines",
+            line={"width": 0},
+            fill="tonexty",
+            fillcolor="rgba(99, 110, 250, 0.20)",
+            name="Min–max range",
+            hovertemplate="Maximum: %{y:.2f}<extra></extra>",
+        )
     )
 
-    figure = px.line(
-        long_dataframe,
-        x="WindowStart",
-        y="Value",
-        color="Metric",
-        markers=True,
+    figure.add_trace(
+        go.Scatter(
+            x=chart_dataframe["WindowStart"],
+            y=chart_dataframe[average_column],
+            mode="lines+markers",
+            line={"color": "#636EFA", "width": 3},
+            marker={"size": 6},
+            name="Average",
+            hovertemplate="Average: %{y:.2f}<extra></extra>",
+        )
     )
+
+    if alert_threshold is not None:
+        figure.add_hline(
+            y=alert_threshold,
+            line_color="#EF553B",
+            line_dash="dash",
+            annotation_text=(
+                f"Alert threshold ({alert_threshold:g})"
+            ),
+            annotation_position="top left",
+        )
 
     return configure_figure(
         figure,
@@ -536,6 +566,7 @@ def update_dashboard(
         maximum_column="MaximumTemperature",
         title="Temperature",
         y_axis_title="°C",
+        alert_threshold=TEMPERATURE_ALERT_THRESHOLD,
     )
 
     latest_row = filtered_dataframe.iloc[-1]
@@ -546,14 +577,17 @@ def update_dashboard(
 
     average_current = latest_row["AverageCurrent"]
     average_voltage = latest_row["AverageVoltage"]
-    maximum_temperature = latest_row["MaximumTemperature"]
+    average_temperature = latest_row["AverageTemperature"]
 
+    latest_temperature_alert = latest_row["TemperatureAlert"]
     has_temperature_alert = bool(
-        filtered_dataframe["TemperatureAlert"].fillna(False).any()
+        latest_temperature_alert
+        if pd.notna(latest_temperature_alert)
+        else False
     )
 
     alert_text = (
-        "Temperature alert active"
+        "🚨 Temperature alert active"
         if has_temperature_alert
         else "Temperature within the acceptable range"
     )
@@ -584,7 +618,7 @@ def update_dashboard(
     )
 
     voltage_card = create_kpi_card(
-        "Voltage Average",
+        "Voltage average now",
         (
             f"{average_voltage:.2f} V"
             if pd.notna(average_voltage)
@@ -597,13 +631,13 @@ def update_dashboard(
         dbc.CardBody(
             [
                 html.H6(
-                    "Max Temperature",
+                    "Temperature average now",
                     className="text-uppercase text-muted",
                 ),
                 html.H3(
                     (
-                        f"{maximum_temperature:.0f} °C"
-                        if pd.notna(maximum_temperature)
+                        f"{average_temperature:.2f} °C"
+                        if pd.notna(average_temperature)
                         else "--"
                     ),
                     className="mb-1",
@@ -614,7 +648,14 @@ def update_dashboard(
                 ),
             ]
         ),
-        className="h-100 shadow-sm",
+        className=(
+            "h-100 shadow-sm temperature-card "
+            + (
+                "temperature-alert-active"
+                if has_temperature_alert
+                else ""
+            )
+        ),
     )
 
     connection_message = dbc.Alert(
