@@ -40,7 +40,7 @@ class PowerMachineSimulation:
         return round(max(current, 0), 2)
 
     def temperature_function(self, current):
-        target_temperature = 85 + current * 1.2
+        target_temperature = 65 + current * 1.2
 
         # aproxima lentamente a temperatura do valor esperado para a carga
         self.temperature += (

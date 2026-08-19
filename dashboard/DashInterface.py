@@ -69,6 +69,8 @@ TEMPERATURE_ALERT_THRESHOLD = int(
     )
 )
 
+ALL_MACHINES_VALUE = "__all__"
+
 
 def get_postgres_connection():
     return psycopg2.connect(
@@ -169,6 +171,7 @@ def configure_figure(
     figure,
     title: str,
     y_axis_title: str,
+    legend_title: str = "Metric",
 ):
     figure.update_layout(
         title=title,
@@ -179,7 +182,7 @@ def configure_figure(
         yaxis_title=y_axis_title,
         xaxis_tickformat="%H:%M",
         hovermode="x unified",
-        legend_title_text="Metric",
+        legend_title_text=legend_title,
         template="plotly_dark",
         margin={
             "l": 50,
@@ -267,6 +270,69 @@ def create_metric_figure(
         figure,
         title=title,
         y_axis_title=y_axis_title,
+    )
+
+
+def create_all_machines_figure(
+    dataframe: pd.DataFrame,
+    average_column: str,
+    title: str,
+    y_axis_title: str,
+    alerted_machines: set[str],
+    alert_threshold: float | None = None,
+):
+    figure = go.Figure()
+    colors = px.colors.qualitative.Plotly
+
+    for index, machine in enumerate(
+        sorted(dataframe["Machine"].unique())
+    ):
+        machine_dataframe = dataframe[
+            dataframe["Machine"] == machine
+        ].sort_values("WindowStart")
+
+        legend_name = (
+            f"🚨 {machine}"
+            if machine in alerted_machines
+            else machine
+        )
+
+        figure.add_trace(
+            go.Scatter(
+                x=machine_dataframe["WindowStart"],
+                y=machine_dataframe[average_column],
+                mode="lines+markers",
+                line={
+                    "color": colors[index % len(colors)],
+                    "width": 3,
+                },
+                marker={"size": 6},
+                name=legend_name,
+                customdata=[machine] * len(machine_dataframe),
+                hovertemplate=(
+                    "Machine: %{customdata}<br>"
+                    "Window: %{x|%d/%m %H:%M}<br>"
+                    "Average: %{y:.2f}<extra></extra>"
+                ),
+            )
+        )
+
+    if alert_threshold is not None:
+        figure.add_hline(
+            y=alert_threshold,
+            line_color="#EF553B",
+            line_dash="dash",
+            annotation_text=(
+                f"Alert threshold ({alert_threshold:g})"
+            ),
+            annotation_position="top left",
+        )
+
+    return configure_figure(
+        figure,
+        title=title,
+        y_axis_title=y_axis_title,
+        legend_title="Machine",
     )
 
 
@@ -524,14 +590,177 @@ def update_dashboard(
 
     machine_options = [
         {
+            "label": "All machines",
+            "value": ALL_MACHINES_VALUE,
+        },
+    ] + [
+        {
             "label": machine,
             "value": machine,
         }
         for machine in machines
     ]
 
-    if selected_machine not in machines:
-        selected_machine = machines[0]
+    if (
+        selected_machine != ALL_MACHINES_VALUE
+        and selected_machine not in machines
+    ):
+        selected_machine = ALL_MACHINES_VALUE
+
+    if selected_machine == ALL_MACHINES_VALUE:
+        sorted_dataframe = dataframe.sort_values(
+            ["Machine", "WindowStart"]
+        )
+
+        latest_machine_rows = (
+            sorted_dataframe
+            .groupby("Machine", as_index=False)
+            .tail(1)
+        )
+
+        alerted_machines = set(
+            latest_machine_rows.loc[
+                latest_machine_rows["TemperatureAlert"]
+                .fillna(False)
+                .astype(bool),
+                "Machine",
+            ].tolist()
+        )
+
+        current_figure = create_all_machines_figure(
+            sorted_dataframe,
+            average_column="AverageCurrent",
+            title="Average current by machine",
+            y_axis_title="Amperes",
+            alerted_machines=alerted_machines,
+        )
+
+        voltage_figure = create_all_machines_figure(
+            sorted_dataframe,
+            average_column="AverageVoltage",
+            title="Average voltage by machine",
+            y_axis_title="Volts",
+            alerted_machines=alerted_machines,
+        )
+
+        temperature_figure = create_all_machines_figure(
+            sorted_dataframe,
+            average_column="AverageTemperature",
+            title="Average temperature by machine",
+            y_axis_title="°C",
+            alerted_machines=alerted_machines,
+            alert_threshold=TEMPERATURE_ALERT_THRESHOLD,
+        )
+
+        total_records = int(sorted_dataframe["Records"].sum())
+        latest_processing = sorted_dataframe["ProcessingDate"].max()
+        alert_count = len(alerted_machines)
+        has_temperature_alert = alert_count > 0
+
+        records_card = create_kpi_card(
+            "Processed records",
+            str(total_records),
+            f"{len(sorted_dataframe)} two-minute windows",
+        )
+
+        current_card = create_kpi_card(
+            "Machines monitored",
+            str(len(machines)),
+            "Selected period",
+        )
+
+        if pd.notna(latest_processing):
+            latest_processing_value = latest_processing.strftime(
+                "%H:%M:%S"
+            )
+            latest_processing_subtitle = latest_processing.strftime(
+                "%d/%m/%Y"
+            )
+        else:
+            latest_processing_value = "--"
+            latest_processing_subtitle = "Not informed"
+
+        voltage_card = create_kpi_card(
+            "Latest processing",
+            latest_processing_value,
+            latest_processing_subtitle,
+        )
+
+        alert_text = (
+            "🚨 Check highlighted machines"
+            if has_temperature_alert
+            else "All machines within the acceptable range"
+        )
+
+        temperature_card = dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H6(
+                        "Machines in alert",
+                        className="text-uppercase text-muted",
+                    ),
+                    html.H3(
+                        str(alert_count),
+                        className="mb-1",
+                    ),
+                    dbc.Badge(
+                        alert_text,
+                        color=(
+                            "danger"
+                            if has_temperature_alert
+                            else "success"
+                        ),
+                    ),
+                ]
+            ),
+            className=(
+                "h-100 shadow-sm temperature-card "
+                + (
+                    "temperature-alert-active"
+                    if has_temperature_alert
+                    else ""
+                )
+            ),
+        )
+
+        connection_message = dbc.Alert(
+            (
+                f"Showing average metrics for {len(machines)} "
+                "machines."
+            ),
+            color=(
+                "danger"
+                if has_temperature_alert
+                else "success"
+            ),
+            className="py-2",
+        )
+
+        last_processing_text = (
+            latest_processing.strftime("%d/%m/%Y %H:%M:%S")
+            if pd.notna(latest_processing)
+            else "Not informed"
+        )
+
+        last_update = (
+            "Last update dashboard: "
+            f"{datetime.now().strftime('%d/%m/%Y %H:%M:%S')} | "
+            f"Last processing: {last_processing_text}"
+        )
+
+        return (
+            machine_options,
+            selected_machine,
+            current_figure,
+            voltage_figure,
+            temperature_figure,
+            records_card,
+            current_card,
+            voltage_card,
+            temperature_card,
+            connection_message,
+            last_update,
+        )
 
     filtered_dataframe = dataframe[
         dataframe["Machine"] == selected_machine
